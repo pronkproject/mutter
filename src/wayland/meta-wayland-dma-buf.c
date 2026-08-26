@@ -1668,13 +1668,13 @@ dma_buf_bind (struct wl_client *client,
 
 static void
 add_format (MetaWaylandDmaBufManager *dma_buf_manager,
-            CoglRendererEGL          *renderer_egl,
+            CoglRenderer             *renderer,
             uint32_t                  drm_format)
 {
   MetaContext *context = dma_buf_manager->compositor->context;
   MetaBackend *backend = meta_context_get_backend (context);
-  EGLint num_modifiers;
-  g_autofree EGLuint64KHR *modifiers = NULL;
+  g_autoptr (GArray) modifiers = NULL;
+  g_autoptr (GArray) external_only = NULL;
   g_autoptr (GError) error = NULL;
   int i;
   MetaWaylandDmaBufFormat format;
@@ -1682,32 +1682,24 @@ add_format (MetaWaylandDmaBufManager *dma_buf_manager,
   if (!should_send_modifiers (backend))
     goto add_fallback;
 
-  /* First query the number of available modifiers, then allocate an array,
-   * then fill the array. */
-  if (!cogl_renderer_egl_query_dma_buf_modifiers (renderer_egl, drm_format, 0,
-                                                  NULL, NULL, &num_modifiers,
-                                                  NULL))
-    goto add_fallback;
+  modifiers = g_array_new (FALSE, FALSE, sizeof (uint64_t));
+  external_only = g_array_new (FALSE, FALSE, sizeof (gboolean));
 
-  if (num_modifiers == 0)
-    goto add_fallback;
-
-  modifiers = g_new0 (uint64_t, num_modifiers);
-  if (!cogl_renderer_egl_query_dma_buf_modifiers (renderer_egl, drm_format,
-                                                  num_modifiers, modifiers,
-                                                  NULL, &num_modifiers,
-                                                  &error))
+  if (!cogl_renderer_query_dma_buf_modifiers (renderer, drm_format,
+                                              modifiers, external_only,
+                                              &error))
     {
-      g_warning ("Failed to query modifiers for format 0x%" PRIu32 ": %s",
-                 drm_format, error->message);
+      if (error)
+        g_warning ("Failed to query modifiers for format 0x%" PRIu32 ": %s",
+                   drm_format, error->message);
       goto add_fallback;
     }
 
-  for (i = 0; i < num_modifiers; i++)
+  for (i = 0; i < modifiers->len; i++)
     {
       format = (MetaWaylandDmaBufFormat) {
         .drm_format = drm_format,
-        .drm_modifier = modifiers[i],
+        .drm_modifier = g_array_index (modifiers, uint64_t, i),
         .table_index = dma_buf_manager->formats->len,
       };
       g_array_append_val (dma_buf_manager->formats, format);
@@ -1800,7 +1792,7 @@ init_formats (MetaWaylandDmaBufManager  *dma_buf_manager,
       format_info = meta_format_info_from_drm_format (driver_formats[i]);
       if (format_info && format_info->multi_texture_format !=
           META_MULTI_TEXTURE_FORMAT_INVALID)
-        add_format (dma_buf_manager, renderer_egl, driver_formats[i]);
+        add_format (dma_buf_manager, COGL_RENDERER (renderer_egl), driver_formats[i]);
     }
 
   if (dma_buf_manager->formats->len == 0)

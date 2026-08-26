@@ -333,6 +333,25 @@ cogl_renderer_create_dma_buf_framebuffer (CoglRenderer     *renderer,
 }
 
 gboolean
+cogl_renderer_query_dma_buf_modifiers (CoglRenderer  *renderer,
+                                       uint32_t       drm_format,
+                                       GArray        *modifiers,
+                                       GArray        *external_only,
+                                       GError       **error)
+{
+  CoglRendererClass *class = COGL_RENDERER_GET_CLASS (renderer);
+
+  if (class->query_dma_buf_modifiers)
+    return class->query_dma_buf_modifiers (renderer, drm_format,
+                                           modifiers, external_only,
+                                           error);
+
+  g_set_error (error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+               "Querying DMA buf modifiers not supported by this renderer");
+  return FALSE;
+}
+
+gboolean
 cogl_renderer_is_hardware_accelerated (CoglRenderer *renderer)
 {
   CoglRendererClass *class = COGL_RENDERER_GET_CLASS (renderer);

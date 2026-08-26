@@ -393,18 +393,6 @@ gboolean cogl_renderer_egl_query_dma_buf_formats (CoglRendererEGL  *renderer_egl
                                                   GError          **error);
 
 /**
- * cogl_renderer_egl_query_dma_buf_modifiers: (skip)
- */
-COGL_EXPORT
-gboolean cogl_renderer_egl_query_dma_buf_modifiers (CoglRendererEGL  *renderer_egl,
-                                                    EGLint            format,
-                                                    EGLint            max_modifiers,
-                                                    EGLuint64KHR     *modifiers,
-                                                    EGLBoolean       *external_only,
-                                                    EGLint           *num_modifiers,
-                                                    GError          **error);
-
-/**
  * cogl_renderer_egl_query_display_attrib: (skip)
  */
 COGL_EXPORT
