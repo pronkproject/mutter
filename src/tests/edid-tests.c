@@ -60,12 +60,56 @@ unsigned char edid_blob[] = {
 };
 unsigned int edid_blob_len = 384;
 
+static uint8_t
+checksum (const uint8_t *data,
+          size_t         size)
+{
+  uint8_t sum = 0;
+  size_t i;
+
+  for (i = 0; i < size; i++)
+    sum += data[i];
+
+  return -sum;
+}
+
+static void
+set_displayid_product_name (uint8_t    *edid,
+                            const char *name)
+{
+  uint8_t *extension = edid + 256;
+  size_t name_size = strlen (name);
+  size_t payload_size = 12 + name_size;
+  size_t data_size = 3 + payload_size;
+  size_t structure_checksum_index = 5 + data_size;
+
+  g_assert_cmpuint (name_size, <=, 106);
+
+  memset (extension, 0, 128);
+  extension[0] = 0x70;
+  extension[1] = 0x13;
+  extension[2] = (uint8_t) data_size;
+  extension[3] = 4;
+  extension[5] = 0x00;
+  extension[6] = 0;
+  extension[7] = (uint8_t) payload_size;
+  memcpy (&extension[8], "TOL", 3);
+  extension[19] = (uint8_t) name_size;
+  memcpy (&extension[20], name, name_size);
+  extension[structure_checksum_index] =
+    checksum (&extension[1], structure_checksum_index - 1);
+  extension[127] = checksum (extension, 127);
+}
+
 
 int
 main (int    argc,
       char **argv)
 {
   g_autoptr (MetaEdidInfo) edid_info = NULL;
+  g_autofree uint8_t *displayid_edid = NULL;
+  g_autoptr (MetaEdidInfo) displayid_info = NULL;
+
   edid_info = meta_edid_info_new_parse (edid_blob,edid_blob_len);
 
   g_assert_nonnull (edid_info);
@@ -78,4 +122,14 @@ main (int    argc,
   g_assert_true (edid_info->hdr_static_metadata.pq);
   g_assert_true (edid_info->colorimetry.bt2020_rgb);
   g_assert_true (edid_info->colorimetry.bt2020_ycc);
+  g_assert_false (edid_info->dsc_product_name_is_displayid);
+
+  displayid_edid = g_memdup2 (edid_blob, edid_blob_len);
+  set_displayid_product_name (displayid_edid, "Apartment Living Room TV");
+  displayid_info = meta_edid_info_new_parse (displayid_edid, edid_blob_len);
+  g_assert_nonnull (displayid_info);
+  g_assert_cmpstr (displayid_info->dsc_product_name,
+                   ==,
+                   "Apartment Living Room TV");
+  g_assert_true (displayid_info->dsc_product_name_is_displayid);
 }

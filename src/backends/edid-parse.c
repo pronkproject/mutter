@@ -35,6 +35,108 @@
 
 #include "backends/edid.h"
 
+#define EDID_BLOCK_SIZE 128
+#define DISPLAYID_EXTENSION_TAG 0x70
+#define DISPLAYID_HEADER_SIZE 5
+#define DISPLAYID_DATA_BLOCK_HEADER_SIZE 3
+#define DISPLAYID_V1_PRODUCT_ID_TAG 0x00
+#define DISPLAYID_V2_PRODUCT_ID_TAG 0x20
+#define DISPLAYID_PRODUCT_FIXED_SIZE 12
+
+static gboolean
+has_zero_checksum (const uint8_t *data,
+                   size_t         size)
+{
+  uint8_t sum = 0;
+  size_t i;
+
+  for (i = 0; i < size; i++)
+    sum += data[i];
+
+  return sum == 0;
+}
+
+static char *
+get_displayid_product_name (const uint8_t *edid,
+                            size_t         size)
+{
+  size_t block_count;
+  size_t block_index;
+
+  if (size < EDID_BLOCK_SIZE)
+    return NULL;
+
+  block_count = MIN ((size_t) edid[126] + 1, size / EDID_BLOCK_SIZE);
+  for (block_index = 1; block_index < block_count; block_index++)
+    {
+      const uint8_t *extension = edid + block_index * EDID_BLOCK_SIZE;
+      uint8_t product_id_tag;
+      size_t section_end;
+      size_t offset;
+
+      if (extension[0] != DISPLAYID_EXTENSION_TAG ||
+          !has_zero_checksum (extension, EDID_BLOCK_SIZE))
+        continue;
+
+      section_end = DISPLAYID_HEADER_SIZE + extension[2];
+      if (section_end > EDID_BLOCK_SIZE - 2 ||
+          !has_zero_checksum (&extension[1], section_end))
+        continue;
+      product_id_tag = extension[1] >= 0x20 ?
+        DISPLAYID_V2_PRODUCT_ID_TAG : DISPLAYID_V1_PRODUCT_ID_TAG;
+
+      for (offset = DISPLAYID_HEADER_SIZE; offset < section_end;)
+        {
+          const uint8_t *data_block = extension + offset;
+          size_t payload_size;
+          size_t data_block_size;
+          size_t product_name_size;
+          const uint8_t *product_name;
+          size_t i;
+
+          if (section_end - offset < DISPLAYID_DATA_BLOCK_HEADER_SIZE)
+            break;
+
+          payload_size = data_block[2];
+          data_block_size = DISPLAYID_DATA_BLOCK_HEADER_SIZE + payload_size;
+          if (data_block_size > section_end - offset)
+            break;
+
+          if (data_block[0] != product_id_tag)
+            {
+              offset += data_block_size;
+              continue;
+            }
+          if (payload_size < DISPLAYID_PRODUCT_FIXED_SIZE)
+            {
+              offset += data_block_size;
+              continue;
+            }
+
+          product_name_size = data_block[3 + DISPLAYID_PRODUCT_FIXED_SIZE - 1];
+          if (product_name_size == 0 ||
+              product_name_size > payload_size - DISPLAYID_PRODUCT_FIXED_SIZE)
+            {
+              offset += data_block_size;
+              continue;
+            }
+
+          product_name = data_block + 3 + DISPLAYID_PRODUCT_FIXED_SIZE;
+          for (i = 0; i < product_name_size; i++)
+            {
+              if (product_name[i] < 0x20 || product_name[i] > 0x7e)
+                break;
+            }
+          if (i == product_name_size)
+            return g_strndup ((const char *) product_name, product_name_size);
+
+          offset += data_block_size;
+        }
+    }
+
+  return NULL;
+}
+
 MetaEdidInfo *
 meta_edid_info_new_parse (const uint8_t *edid,
                           size_t         size)
@@ -68,6 +170,8 @@ meta_edid_info_new_parse (const uint8_t *edid,
   info->serial_number = vendor_product->serial;
 
   /* Product Serial and Name */
+  info->dsc_product_name = get_displayid_product_name (edid, size);
+  info->dsc_product_name_is_displayid = info->dsc_product_name != NULL;
   edid_descriptors = di_edid_get_display_descriptors (di_edid);
   for (; *edid_descriptors; edid_descriptors++)
     {
@@ -83,8 +187,9 @@ meta_edid_info_new_parse (const uint8_t *edid,
             g_strdup (di_edid_display_descriptor_get_string (desc));
           break;
         case DI_EDID_DISPLAY_DESCRIPTOR_PRODUCT_NAME:
-          info->dsc_product_name =
-            g_strdup (di_edid_display_descriptor_get_string (desc));
+          if (!info->dsc_product_name)
+            info->dsc_product_name =
+              g_strdup (di_edid_display_descriptor_get_string (desc));
           break;
         case DI_EDID_DISPLAY_DESCRIPTOR_RANGE_LIMITS:
           range_limits = di_edid_display_descriptor_get_range_limits (desc);

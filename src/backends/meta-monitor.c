@@ -270,6 +270,7 @@ static char *
 meta_monitor_make_display_name (MetaMonitor *monitor)
 {
   MetaBackend *backend = meta_monitor_get_backend (monitor);
+  const MetaOutputInfo *output_info = meta_monitor_get_main_output_info (monitor);
   g_autofree char *inches = NULL;
   g_autofree char *vendor_name = NULL;
   const char *vendor = NULL;
@@ -281,6 +282,11 @@ meta_monitor_make_display_name (MetaMonitor *monitor)
 
   if (meta_monitor_is_builtin (monitor))
       return g_strdup (_("Built-in display"));
+
+  /* DisplayID product names are variable-length presentation strings. Unlike
+   * the legacy model descriptor, they can carry a complete display label. */
+  if (output_info->product_name_is_displayid && output_info->product)
+    return g_strdup (output_info->product);
 
   if (width_mm > 0 && height_mm > 0)
     {

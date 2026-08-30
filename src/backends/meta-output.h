@@ -114,6 +114,7 @@ typedef struct _MetaOutputInfo
   char *name;
   char *vendor;
   char *product;
+  gboolean product_name_is_displayid;
   char *serial;
 
   char *edid_checksum_md5;

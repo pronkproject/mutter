@@ -37,6 +37,7 @@ typedef struct _MetaEdidInfo
   /* Optional product description */
   char *dsc_serial_number;
   char *dsc_product_name;
+  gboolean dsc_product_name_is_displayid;
 
   struct di_color_primaries default_color_primaries;
   double default_gamma; /* -1.0 if not specified FIXME, now 0 */

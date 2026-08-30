@@ -321,6 +321,8 @@ set_output_details_from_edid (MetaOutputInfo *output_info,
     g_clear_pointer (&output_info->vendor, g_free);
 
   output_info->product = g_strdup (edid_info->dsc_product_name);
+  output_info->product_name_is_displayid =
+    edid_info->dsc_product_name_is_displayid;
   if (!output_info->product ||
       !g_utf8_validate (output_info->product, -1, NULL) ||
       output_info->product[0] == '\0')
