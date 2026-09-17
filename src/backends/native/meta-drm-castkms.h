@@ -3,12 +3,14 @@
 
 #include <drm.h>
 
-#define DRM_CASTKMS_MONITOR_CONTROL_VERSION 2
+#define DRM_CASTKMS_MONITOR_CONTROL_VERSION 1
 #define DRM_CASTKMS_MONITOR_MAX_EDID_SIZE (256U * 128U)
-#define DRM_CASTKMS_RENDERER_VERSION 8
-
-#define DRM_CASTKMS_TRANSITION_PROPERTY "CASTKMS_TRANSITION"
-#define DRM_CASTKMS_EXECUTION_PROPERTY "CASTKMS_EXECUTION"
+#define DRM_CASTKMS_RENDERER_VERSION 1
+#define DRM_CASTKMS_RENDERER_STATE_EMPTY 0
+#define DRM_CASTKMS_RENDERER_STATE_CONFIGURED 1
+#define DRM_CASTKMS_RENDERER_STATE_PUBLISHING 2
+#define DRM_CASTKMS_RENDERER_STATE_PUBLISHED 3
+#define DRM_CASTKMS_RENDERER_STATE_WITHDRAWN 4
 
 struct drm_castkms_create_monitor_control
 {
@@ -38,7 +40,7 @@ struct drm_castkms_renderer_files
   __s32 revoke_fd;
 };
 
-struct drm_castkms_create_renderer_control
+struct drm_castkms_create_renderer
 {
   __u32 crtc_id;
   __u32 connector_id;
@@ -50,37 +52,25 @@ struct drm_castkms_create_renderer_control
 struct drm_castkms_renderer_query
 {
   __u32 version;
-  __u32 flags;
-  __u32 profile;
-  __u32 reserved;
-  __u64 generation;
+  __u32 state;
+  __u64 constraints_id;
+  __u64 reserved[2];
 };
 
 #define DRM_CASTKMS_CREATE_MONITOR_CONTROL 0x00
-#define DRM_CASTKMS_CREATE_RENDERER_CONTROL 0x01
+#define DRM_CASTKMS_CREATE_RENDERER 0x01
 #define DRM_CASTKMS_MONITOR_QUERY 0x01
-#define DRM_CASTKMS_RENDERER_QUERY 0x04
+#define DRM_CASTKMS_RENDERER_QUERY 0x00
 
 #define DRM_IOCTL_CASTKMS_CREATE_MONITOR_CONTROL \
   DRM_IOW (DRM_COMMAND_BASE + DRM_CASTKMS_CREATE_MONITOR_CONTROL, \
            struct drm_castkms_create_monitor_control)
-#define DRM_IOCTL_CASTKMS_CREATE_RENDERER_CONTROL \
-  DRM_IOW (DRM_COMMAND_BASE + DRM_CASTKMS_CREATE_RENDERER_CONTROL, \
-           struct drm_castkms_create_renderer_control)
+#define DRM_IOCTL_CASTKMS_CREATE_RENDERER \
+  DRM_IOW (DRM_COMMAND_BASE + DRM_CASTKMS_CREATE_RENDERER, \
+           struct drm_castkms_create_renderer)
 #define DRM_IOCTL_CASTKMS_MONITOR_QUERY \
   DRM_IOR (DRM_COMMAND_BASE + DRM_CASTKMS_MONITOR_QUERY, \
            struct drm_castkms_monitor_query)
 #define DRM_IOCTL_CASTKMS_RENDERER_QUERY \
   DRM_IOR (DRM_COMMAND_BASE + DRM_CASTKMS_RENDERER_QUERY, \
            struct drm_castkms_renderer_query)
-
-#define DRM_CASTKMS_EXECUTION_VERSION 1
-#define DRM_CASTKMS_EXECUTION_HOST_V1 1
-#define DRM_CASTKMS_EXECUTION_GPU_V1 2
-
-struct drm_castkms_execution
-{
-  __u32 version;
-  __u32 profile;
-  __u64 generation;
-};

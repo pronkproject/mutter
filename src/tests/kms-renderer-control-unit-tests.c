@@ -31,12 +31,10 @@ typedef enum
   QUERY_VALID,
   QUERY_FAIL,
   QUERY_INTERRUPT_ONCE,
-  QUERY_GPU,
   QUERY_BAD_VERSION,
-  QUERY_BAD_FLAGS,
-  QUERY_BAD_PROFILE,
+  QUERY_BAD_STATE,
+  QUERY_BAD_ID,
   QUERY_BAD_RESERVED,
-  QUERY_ZERO_GENERATION,
 } QueryReply;
 
 static gboolean in_impl;
@@ -148,7 +146,7 @@ __wrap_drmIoctl (int            fd,
                  unsigned long  command,
                  void          *data)
 {
-  struct drm_castkms_create_renderer_control *request = data;
+  struct drm_castkms_create_renderer *request = data;
   struct drm_castkms_renderer_files *files =
     (void *) (uintptr_t) request->files;
   int pipe_fds[2];
@@ -156,7 +154,7 @@ __wrap_drmIoctl (int            fd,
   g_assert_true (in_impl);
   g_assert_cmpint (fd, ==, issuer_fd);
   g_assert_cmpuint (command, ==,
-                    DRM_IOCTL_CASTKMS_CREATE_RENDERER_CONTROL);
+                    DRM_IOCTL_CASTKMS_CREATE_RENDERER);
   g_assert_cmpuint (request->crtc_id, ==, 7);
   g_assert_cmpuint (request->connector_id, ==, 11);
   g_assert_cmpuint (request->flags, ==, 0);
@@ -229,28 +227,21 @@ __wrap_ioctl (int            fd,
 
   *query = (struct drm_castkms_renderer_query) {
     .version = DRM_CASTKMS_RENDERER_VERSION,
-    .profile = DRM_CASTKMS_EXECUTION_HOST_V1,
-    .generation = 9,
+    .state = DRM_CASTKMS_RENDERER_STATE_EMPTY,
   };
   switch (query_reply)
     {
     case QUERY_BAD_VERSION:
       query->version++;
       break;
-    case QUERY_BAD_FLAGS:
-      query->flags = 1;
+    case QUERY_BAD_STATE:
+      query->state = UINT32_MAX;
       break;
-    case QUERY_BAD_PROFILE:
-      query->profile = UINT32_MAX;
-      break;
-    case QUERY_GPU:
-      query->profile = DRM_CASTKMS_EXECUTION_GPU_V1;
+    case QUERY_BAD_ID:
+      query->constraints_id = 9;
       break;
     case QUERY_BAD_RESERVED:
-      query->reserved = 1;
-      break;
-    case QUERY_ZERO_GENERATION:
-      query->generation = 0;
+      query->reserved[1] = 1;
       break;
     default:
       break;
@@ -333,21 +324,6 @@ test_query_interruption (void)
 }
 
 static void
-test_gpu_query_reply (void)
-{
-  g_autoptr (GError) error = NULL;
-  g_autoptr (MetaKmsRendererControl) control = NULL;
-
-  begin_case ();
-  query_reply = QUERY_GPU;
-  control = meta_kms_renderer_control_new ((MetaKmsDevice *) device_object,
-                                           7, 11, &error);
-  g_assert_no_error (error);
-  g_assert_nonnull (control);
-  end_case ();
-}
-
-static void
 test_invalid_create_reply (void)
 {
   const CreateReply replies[] = {
@@ -383,10 +359,9 @@ test_invalid_query_reply (void)
   const QueryReply replies[] = {
     QUERY_FAIL,
     QUERY_BAD_VERSION,
-    QUERY_BAD_FLAGS,
-    QUERY_BAD_PROFILE,
+    QUERY_BAD_STATE,
+    QUERY_BAD_ID,
     QUERY_BAD_RESERVED,
-    QUERY_ZERO_GENERATION,
   };
 
   for (unsigned int i = 0; i < G_N_ELEMENTS (replies); i++)
@@ -453,8 +428,6 @@ main (int    argc,
                    test_ownership);
   g_test_add_func ("/backends/native/kms-renderer-control/query-interruption",
                    test_query_interruption);
-  g_test_add_func ("/backends/native/kms-renderer-control/gpu-query",
-                   test_gpu_query_reply);
   g_test_add_func ("/backends/native/kms-renderer-control/create-replies",
                    test_invalid_create_reply);
   g_test_add_func ("/backends/native/kms-renderer-control/query-replies",

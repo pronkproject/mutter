@@ -18,8 +18,8 @@
 #include "backends/native/meta-kms-private.h"
 
 G_STATIC_ASSERT (sizeof (struct drm_castkms_renderer_files) == 8);
-G_STATIC_ASSERT (sizeof (struct drm_castkms_create_renderer_control) == 32);
-G_STATIC_ASSERT (sizeof (struct drm_castkms_renderer_query) == 24);
+G_STATIC_ASSERT (sizeof (struct drm_castkms_create_renderer) == 32);
+G_STATIC_ASSERT (sizeof (struct drm_castkms_renderer_query) == 32);
 
 struct _MetaKmsRendererControl
 {
@@ -95,16 +95,15 @@ validate_contract (int      fd,
   if (ioctl_nointr (fd, DRM_IOCTL_CASTKMS_RENDERER_QUERY, &query) == -1)
     return set_errno_error (error, errno, "Querying CastKMS renderer control");
   if (query.version != DRM_CASTKMS_RENDERER_VERSION ||
-      query.flags != 0 ||
-      (query.profile != DRM_CASTKMS_EXECUTION_HOST_V1 &&
-       query.profile != DRM_CASTKMS_EXECUTION_GPU_V1) ||
-      query.reserved != 0 ||
-      query.generation == 0)
+      query.state != DRM_CASTKMS_RENDERER_STATE_EMPTY ||
+      query.constraints_id != 0 ||
+      query.reserved[0] != 0 ||
+      query.reserved[1] != 0)
     {
       g_set_error_literal (error,
                            G_IO_ERROR,
                            G_IO_ERROR_NOT_SUPPORTED,
-                           "CastKMS returned an unsupported renderer-control "
+                           "CastKMS returned an unsupported renderer endpoint "
                            "contract");
       return FALSE;
     }
@@ -124,7 +123,7 @@ create_in_impl (MetaThreadImpl  *thread_impl,
     .renderer_fd = -1,
     .revoke_fd = -1,
   };
-  struct drm_castkms_create_renderer_control request = {
+  struct drm_castkms_create_renderer request = {
     .crtc_id = data->crtc_id,
     .connector_id = data->connector_id,
     .files = (uintptr_t) &files,
@@ -157,10 +156,10 @@ create_in_impl (MetaThreadImpl  *thread_impl,
     return GINT_TO_POINTER (FALSE);
 
   if (drmIoctl (meta_kms_impl_device_get_fd (impl_device),
-                DRM_IOCTL_CASTKMS_CREATE_RENDERER_CONTROL,
+                DRM_IOCTL_CASTKMS_CREATE_RENDERER,
                 &request) == -1)
     {
-      set_errno_error (error, errno, "Creating CastKMS renderer control");
+      set_errno_error (error, errno, "Creating CastKMS renderer endpoint");
       return GINT_TO_POINTER (FALSE);
     }
 
@@ -176,7 +175,7 @@ create_in_impl (MetaThreadImpl  *thread_impl,
       g_set_error_literal (error,
                            G_IO_ERROR,
                            G_IO_ERROR_INVALID_DATA,
-                           "CastKMS returned invalid renderer-control "
+                           "CastKMS returned invalid renderer endpoint "
                            "descriptors");
       return GINT_TO_POINTER (FALSE);
     }
