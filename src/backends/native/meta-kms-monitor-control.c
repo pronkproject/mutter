@@ -96,7 +96,7 @@ validate_contract (int      fd,
     return set_errno_error (error, errno,
                             "Querying CastKMS monitor control");
   if (query.version != DRM_CASTKMS_MONITOR_CONTROL_VERSION ||
-      query.flags != 0 ||
+      query.flags & ~DRM_CASTKMS_MONITOR_CAP_CEC ||
       query.max_edid_size < 128 ||
       query.max_edid_size % 128 != 0 ||
       query.reserved != 0)

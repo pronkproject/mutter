@@ -30,6 +30,7 @@ typedef enum
 typedef enum
 {
   QUERY_VALID,
+  QUERY_CEC,
   QUERY_FAIL,
   QUERY_INTERRUPT_ONCE,
   QUERY_BAD_VERSION,
@@ -229,11 +230,14 @@ __wrap_ioctl (int            fd,
   };
   switch (query_reply)
     {
+    case QUERY_CEC:
+      query->flags = DRM_CASTKMS_MONITOR_CAP_CEC;
+      break;
     case QUERY_BAD_VERSION:
       query->version++;
       break;
     case QUERY_BAD_FLAGS:
-      query->flags = 1;
+      query->flags = DRM_CASTKMS_MONITOR_CAP_CEC << 1;
       break;
     case QUERY_SMALL_EDID:
       query->max_edid_size = 127;
@@ -282,6 +286,22 @@ end_case (void)
   g_assert_cmpint (fcntl (issuer_fd, F_GETFD), >=, 0);
   g_clear_fd (&issuer_fd, NULL);
   g_clear_object (&device_object);
+}
+
+static void
+test_known_capability (void)
+{
+  g_autoptr (GError) error = NULL;
+  g_autoptr (MetaKmsMonitorControl) control = NULL;
+
+  begin_case ();
+  query_reply = QUERY_CEC;
+  control = meta_kms_monitor_control_new ((MetaKmsDevice *) device_object,
+                                          11, &error);
+  g_assert_no_error (error);
+  g_assert_nonnull (control);
+  g_assert_cmpuint (query_calls, ==, 1);
+  end_case ();
 }
 
 static void
@@ -425,6 +445,8 @@ main (int    argc,
   g_test_add_func ("/kms/monitor-control/ownership", test_ownership);
   g_test_add_func ("/kms/monitor-control/query-interruption",
                    test_query_interruption);
+  g_test_add_func ("/kms/monitor-control/known-capability",
+                   test_known_capability);
   g_test_add_func ("/kms/monitor-control/invalid-create-reply",
                    test_invalid_create_reply);
   g_test_add_func ("/kms/monitor-control/invalid-query-reply",
