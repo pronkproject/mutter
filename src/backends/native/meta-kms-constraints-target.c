@@ -127,7 +127,9 @@ meta_kms_constraints_target_allows_format (
             formats[i].permits_imported)) &&
           meta_kms_constraints_size_contains (&formats[i].size,
                                                width,
-                                               height))
+                                               height) &&
+          width % formats[i].width_alignment == 0 &&
+          height % formats[i].height_alignment == 0)
         return TRUE;
     }
 

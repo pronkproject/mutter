@@ -49,8 +49,11 @@ typedef struct _MetaKmsConstraintsFormat
   gboolean permits_native;
   gboolean permits_imported;
   uint32_t plane_count;
+  uint32_t width_alignment;
+  uint32_t height_alignment;
   uint32_t pitch_alignment;
   uint32_t offset_alignment;
+  uint32_t min_pitch;
   uint32_t max_pitch;
   MetaKmsConstraintsSize size;
 } MetaKmsConstraintsFormat;

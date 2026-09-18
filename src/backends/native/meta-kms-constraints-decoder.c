@@ -30,7 +30,7 @@ G_STATIC_ASSERT (sizeof (struct drm_mode_constraints) == 40);
 G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_description) == 16);
 G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_record) == 16);
 G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_output_size) == 32);
-G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_plane_format) == 72);
+G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_plane_format) == 88);
 G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_plane_geometry) == 32);
 G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_property) == 56);
 G_STATIC_ASSERT (sizeof (struct drm_mode_constraints_plane_limit) == 24);
@@ -45,7 +45,9 @@ G_STATIC_ASSERT (G_STRUCT_OFFSET (struct drm_mode_constraints_plane_format,
 G_STATIC_ASSERT (G_STRUCT_OFFSET (struct drm_mode_constraints_plane_format,
                                   layout_flags) == 48);
 G_STATIC_ASSERT (G_STRUCT_OFFSET (struct drm_mode_constraints_plane_format,
-                                  max_pitch) == 68);
+                                  min_pitch) == 76);
+G_STATIC_ASSERT (G_STRUCT_OFFSET (struct drm_mode_constraints_plane_format,
+                                  reserved) == 84);
 G_STATIC_ASSERT (G_STRUCT_OFFSET (struct drm_mode_constraints_property,
                                   minimum) == 32);
 
@@ -258,6 +260,8 @@ decode_description (const uint8_t                *data,
                  ~(DRM_MODE_CONSTRAINTS_FORMAT_STORAGE_NATIVE |
                    DRM_MODE_CONSTRAINTS_FORMAT_STORAGE_IMPORTED)) != 0)
               return DECODE_RESULT_UNSUPPORTED;
+            if (wire.reserved != 0)
+              goto invalid;
             formats[n_formats++] = (MetaKmsConstraintsFormat) {
               .plane_id = wire.plane_id,
               .format = wire.format,
@@ -269,8 +273,11 @@ decode_description (const uint8_t                *data,
               .permits_imported = !!(wire.storage_flags &
                                      DRM_MODE_CONSTRAINTS_FORMAT_STORAGE_IMPORTED),
               .plane_count = wire.plane_count,
+              .width_alignment = wire.width_alignment,
+              .height_alignment = wire.height_alignment,
               .pitch_alignment = wire.pitch_alignment,
               .offset_alignment = wire.offset_alignment,
+              .min_pitch = wire.min_pitch,
               .max_pitch = wire.max_pitch,
               .size = {
                 .min_width = wire.min_width,

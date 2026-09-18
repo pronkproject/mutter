@@ -48,6 +48,23 @@ size_is_valid (const MetaKmsConstraintsSize *size)
 }
 
 static gboolean
+is_power_of_two (uint32_t value)
+{
+  return value != 0 && (value & (value - 1)) == 0;
+}
+
+static gboolean
+range_contains_aligned_value (uint32_t minimum,
+                              uint32_t maximum,
+                              uint32_t alignment)
+{
+  uint64_t aligned = ((uint64_t) minimum + alignment - 1) &
+                     ~((uint64_t) alignment - 1);
+
+  return aligned <= maximum;
+}
+
+static gboolean
 format_is_valid (const MetaKmsConstraintsFormat *format)
 {
   return format->plane_id != 0 &&
@@ -57,12 +74,21 @@ format_is_valid (const MetaKmsConstraintsFormat *format)
          (format->permits_native || format->permits_imported) &&
          format->plane_count >= 1 &&
          format->plane_count <= 4 &&
-         format->pitch_alignment != 0 &&
-         (format->pitch_alignment & (format->pitch_alignment - 1)) == 0 &&
-         format->offset_alignment != 0 &&
-         (format->offset_alignment & (format->offset_alignment - 1)) == 0 &&
-         format->max_pitch >= format->pitch_alignment &&
-         size_is_valid (&format->size);
+         is_power_of_two (format->width_alignment) &&
+         is_power_of_two (format->height_alignment) &&
+         is_power_of_two (format->pitch_alignment) &&
+         is_power_of_two (format->offset_alignment) &&
+         format->min_pitch != 0 &&
+         range_contains_aligned_value (format->min_pitch,
+                                       format->max_pitch,
+                                       format->pitch_alignment) &&
+         size_is_valid (&format->size) &&
+         range_contains_aligned_value (format->size.min_width,
+                                       format->size.max_width,
+                                       format->width_alignment) &&
+         range_contains_aligned_value (format->size.min_height,
+                                       format->size.max_height,
+                                       format->height_alignment);
 }
 
 static gboolean
@@ -533,6 +559,16 @@ format_permits_storage (const MetaKmsConstraintsFormat *format,
   g_assert_not_reached ();
 }
 
+static gboolean
+format_contains_dimensions (const MetaKmsConstraintsFormat *format,
+                            uint32_t                        width,
+                            uint32_t                        height)
+{
+  return meta_kms_constraints_size_contains (&format->size, width, height) &&
+         width % format->width_alignment == 0 &&
+         height % format->height_alignment == 0;
+}
+
 gboolean
 meta_kms_constraints_description_allows_explicit_layout (
   const MetaKmsConstraintsDescription *description,
@@ -554,9 +590,7 @@ meta_kms_constraints_description_allows_explicit_layout (
           !candidate->implicit &&
           candidate->modifier == modifier &&
           format_permits_storage (candidate, storage) &&
-          meta_kms_constraints_size_contains (&candidate->size,
-                                               width,
-                                               height))
+          format_contains_dimensions (candidate, width, height))
         return TRUE;
     }
 
@@ -582,9 +616,7 @@ meta_kms_constraints_description_allows_implicit_layout (
           candidate->format == format &&
           candidate->implicit &&
           format_permits_storage (candidate, storage) &&
-          meta_kms_constraints_size_contains (&candidate->size,
-                                               width,
-                                               height))
+          format_contains_dimensions (candidate, width, height))
         return TRUE;
     }
 
@@ -620,15 +652,14 @@ meta_kms_constraints_description_allows_buffer_layout (
           !!candidate->implicit != !!implicit ||
           (!implicit && candidate->modifier != modifier) ||
           !format_permits_storage (candidate, storage) ||
-          !meta_kms_constraints_size_contains (&candidate->size,
-                                                width,
-                                                height) ||
+          !format_contains_dimensions (candidate, width, height) ||
           candidate->plane_count != n_planes)
         continue;
 
       for (j = 0; j < n_planes; j++)
         {
           if (pitches[j] % candidate->pitch_alignment != 0 ||
+              pitches[j] < candidate->min_pitch ||
               pitches[j] > candidate->max_pitch ||
               offsets[j] % candidate->offset_alignment != 0)
             break;
@@ -674,9 +705,7 @@ meta_kms_constraints_description_copy_drm_formats_for_plane (
 
       if (candidate->plane_id != plane_id ||
           !format_permits_storage (candidate, storage) ||
-          !meta_kms_constraints_size_contains (&candidate->size,
-                                                width,
-                                                height) ||
+          !format_contains_dimensions (candidate, width, height) ||
           contains_uint32 (formats, candidate->format))
         continue;
 
@@ -707,7 +736,7 @@ meta_kms_constraints_description_copy_explicit_modifiers_for_format (
           candidate->format != format ||
           candidate->implicit ||
           !format_permits_storage (candidate, storage) ||
-          !meta_kms_constraints_size_contains (&candidate->size, width, height))
+          !format_contains_dimensions (candidate, width, height))
         continue;
 
       g_array_append_val (modifiers, candidate->modifier);
