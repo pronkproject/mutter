@@ -6,12 +6,6 @@
 #define DRM_CASTKMS_MONITOR_CONTROL_VERSION 1
 #define DRM_CASTKMS_MONITOR_MAX_EDID_SIZE (256U * 128U)
 #define DRM_CASTKMS_MONITOR_CAP_CEC (1U << 0)
-#define DRM_CASTKMS_RENDERER_VERSION 1
-#define DRM_CASTKMS_RENDERER_STATE_EMPTY 0
-#define DRM_CASTKMS_RENDERER_STATE_CONFIGURED 1
-#define DRM_CASTKMS_RENDERER_STATE_PUBLISHING 2
-#define DRM_CASTKMS_RENDERER_STATE_PUBLISHED 3
-#define DRM_CASTKMS_RENDERER_STATE_WITHDRAWN 4
 
 struct drm_castkms_create_monitor_control
 {
@@ -35,43 +29,12 @@ struct drm_castkms_monitor_query
   __u32 reserved;
 };
 
-struct drm_castkms_renderer_files
-{
-  __s32 renderer_fd;
-  __s32 revoke_fd;
-};
-
-struct drm_castkms_create_renderer
-{
-  __u32 crtc_id;
-  __u32 connector_id;
-  __u64 files;
-  __u32 flags;
-  __u32 reserved[3];
-};
-
-struct drm_castkms_renderer_query
-{
-  __u32 version;
-  __u32 state;
-  __u64 constraints_id;
-  __u64 reserved[2];
-};
-
 #define DRM_CASTKMS_CREATE_MONITOR_CONTROL 0x00
-#define DRM_CASTKMS_CREATE_RENDERER 0x01
 #define DRM_CASTKMS_MONITOR_QUERY 0x01
-#define DRM_CASTKMS_RENDERER_QUERY 0x00
 
 #define DRM_IOCTL_CASTKMS_CREATE_MONITOR_CONTROL \
   DRM_IOW (DRM_COMMAND_BASE + DRM_CASTKMS_CREATE_MONITOR_CONTROL, \
            struct drm_castkms_create_monitor_control)
-#define DRM_IOCTL_CASTKMS_CREATE_RENDERER \
-  DRM_IOW (DRM_COMMAND_BASE + DRM_CASTKMS_CREATE_RENDERER, \
-           struct drm_castkms_create_renderer)
 #define DRM_IOCTL_CASTKMS_MONITOR_QUERY \
   DRM_IOR (DRM_COMMAND_BASE + DRM_CASTKMS_MONITOR_QUERY, \
            struct drm_castkms_monitor_query)
-#define DRM_IOCTL_CASTKMS_RENDERER_QUERY \
-  DRM_IOR (DRM_COMMAND_BASE + DRM_CASTKMS_RENDERER_QUERY, \
-           struct drm_castkms_renderer_query)

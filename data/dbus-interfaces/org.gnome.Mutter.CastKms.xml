@@ -8,9 +8,8 @@
 
       This private development interface authorizes only the unique owner of
       io.github.pronkproject.Pronk1 on the session bus. It passes separate
-      monitor-control, renderer and final-image capture capabilities. None of
-      the descriptors provide primary-node access, audio or CEC access. Only
-      the renderer descriptor can later participate in raw-plane execution.
+      monitor-control and final-image capture capabilities. Neither
+      descriptor provides primary-node or raw-plane execution access.
   -->
   <interface name="org.gnome.Mutter.CastKms">
     <!--
@@ -20,22 +19,19 @@
         @crtc_id: nonzero DRM CRTC object ID
         @connector_id: nonzero DRM connector object ID on the same device
         @monitor_fd: anonymous monitor attachment descriptor
-        @renderer_fd: anonymous renderer descriptor
-        @renderer_id: session-local identity for releasing renderer authority
         @capture_fd: anonymous final-image capture descriptor
-        @render_node: DRM render node for importing the compositor's images
         @session_id: nonzero broker-local session identifier
 
-        Mutter retains separate revocation authority for monitor attachment,
-        renderer execution and capture. It also retains the DRM file that
-        issued the capture grant. One session is permitted per connector. The
-        kernel validates the exact output and checks authority again when
-        operations are attempted. Issuance does not attach a monitor, activate
-        delegated rendering or guarantee an active image offer.
+        Mutter retains separate revocation authority for monitor attachment
+        and capture. It also retains the DRM file that issued the capture
+        grant. One session is permitted per connector. The kernel validates
+        the exact output and checks authority again when operations are
+        attempted. Issuance does not attach a monitor, authorize raw-plane
+        rendering or guarantee an active image offer.
 
         The caller must release the session explicitly. Closing monitor_fd
-        detaches the monitor, while closing renderer_fd or capture_fd releases
-        only that consumer reference. Consumer close does not notify the broker.
+        detaches the monitor, while closing capture_fd releases only that
+        consumer reference. Consumer close does not notify the broker.
         Caller disconnection, loss of the Pronk bus name, broker shutdown or
         kernel revocation ends every capability. Session IDs are never reused
         during a broker lifetime and are not kernel identifiers. Clients must
@@ -49,49 +45,14 @@
       <arg name="connector_id" type="u" direction="in" />
       <annotation name="org.gtk.GDBus.C.UnixFD" value="true"/>
       <arg name="monitor_fd" type="h" direction="out" />
-      <arg name="renderer_fd" type="h" direction="out" />
-      <arg name="renderer_id" type="t" direction="out" />
       <arg name="capture_fd" type="h" direction="out" />
-      <arg name="render_node" type="s" direction="out" />
       <arg name="session_id" type="t" direction="out" />
-    </method>
-    <!--
-        AcquireRenderer:
-        @session_id: session returned to the same unique caller
-        @renderer_fd: fresh anonymous renderer descriptor
-        @renderer_id: session-local identity for releasing renderer authority
-
-        Issues another renderer endpoint for an existing display session.
-        Each renderer generation uses a fresh endpoint while the previous
-        endpoint drains admitted source reads.
-        The session retains independent revocation authority for every issued
-        endpoint.
-    -->
-    <method name="AcquireRenderer">
-      <arg name="session_id" type="t" direction="in" />
-      <annotation name="org.gtk.GDBus.C.UnixFD" value="true"/>
-      <arg name="renderer_fd" type="h" direction="out" />
-      <arg name="renderer_id" type="t" direction="out" />
-    </method>
-    <!--
-        ReleaseRenderer:
-        @session_id: session returned to the same unique caller
-        @renderer_id: renderer identity returned by this session
-
-        Revokes and releases one issued renderer endpoint. Call this after its
-        admitted source reads have drained. Releasing the display session also
-        releases every renderer endpoint that remains registered. Repeating a
-        successful release for the same session and endpoint succeeds.
-    -->
-    <method name="ReleaseRenderer">
-      <arg name="session_id" type="t" direction="in" />
-      <arg name="renderer_id" type="t" direction="in" />
     </method>
     <!--
         ReleaseDisplaySession:
         @session_id: session returned to the same unique caller
 
-        Revokes monitor control, renderer execution and capture, then requests
+        Revokes monitor control and capture, then requests
         release of the issuing file hold. Unknown, already-ended and other
         callers' sessions return an error. A successful reply confirms
         revocation was requested, not completion of admitted writes or

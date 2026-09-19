@@ -24,26 +24,21 @@
 #include <glib/gstdio.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
-#include <xf86drm.h>
 
 #include "backends/meta-backend-private.h"
 #include "backends/meta-dbus-access-checker.h"
 #include "backends/native/meta-backend-native.h"
-#include "backends/native/meta-device-pool.h"
 #include "backends/native/meta-kms-capture-grant.h"
 #include "backends/native/meta-kms-device.h"
 #include "backends/native/meta-kms-monitor-control.h"
-#include "backends/native/meta-kms-renderer-control.h"
 #include "backends/native/meta-kms-update.h"
 #include "backends/native/meta-kms.h"
-#include "backends/native/meta-renderer-native-private.h"
 #include "core/util-private.h"
 
 #define META_CAST_KMS_DBUS_SERVICE "org.gnome.Mutter.CastKms"
 #define META_CAST_KMS_DBUS_PATH "/org/gnome/Mutter/CastKms"
 
 #define PRONK_DBUS_SERVICE "io.github.pronkproject.Pronk1"
-#define MAX_RENDERER_ENDPOINTS 4
 
 enum
 {
@@ -57,25 +52,16 @@ static GParamSpec *obj_props[N_PROPS];
 
 typedef struct _MetaCastKmsDisplaySession MetaCastKmsDisplaySession;
 
-typedef struct
-{
-  uint64_t id;
-  MetaKmsRendererControl *control;
-} MetaCastKmsRendererEndpoint;
-
 struct _MetaCastKmsDisplaySession
 {
   /* The broker owns every session in its hash set. */
   MetaCastKmsGrantBroker *broker;
   MetaKmsCaptureGrant *capture_grant;
   MetaKmsMonitorControl *monitor_control;
-  GPtrArray *renderer_controls;
-  uint64_t last_renderer_id;
   uint64_t session_id;
   char *sender;
   /* The capture grant pins this device while this object exists. */
   MetaKmsDevice *kms_device;
-  uint32_t crtc_id;
   uint32_t connector_id;
   gboolean revoking;
 
@@ -186,49 +172,6 @@ find_cast_kms_device (MetaCastKmsGrantBroker  *broker,
 static void request_session_revoke (MetaCastKmsDisplaySession *session);
 
 static void
-meta_cast_kms_renderer_endpoint_free (MetaCastKmsRendererEndpoint *endpoint)
-{
-  meta_kms_renderer_control_free (endpoint->control);
-  g_free (endpoint);
-}
-
-static uint64_t
-add_renderer_control (MetaCastKmsDisplaySession *session,
-                      MetaKmsRendererControl    *control)
-{
-  MetaCastKmsRendererEndpoint *endpoint;
-
-  g_return_val_if_fail (session->last_renderer_id != G_MAXUINT64, 0);
-
-  endpoint = g_new0 (MetaCastKmsRendererEndpoint, 1);
-  endpoint->id = ++session->last_renderer_id;
-  endpoint->control = control;
-  g_ptr_array_add (session->renderer_controls, endpoint);
-  return endpoint->id;
-}
-
-static gboolean
-remove_renderer_control (MetaCastKmsDisplaySession *session,
-                         uint64_t                   renderer_id)
-{
-  guint i;
-
-  for (i = 0; i < session->renderer_controls->len; i++)
-    {
-      MetaCastKmsRendererEndpoint *endpoint =
-        g_ptr_array_index (session->renderer_controls, i);
-
-      if (endpoint->id == renderer_id)
-        {
-          g_ptr_array_remove_index (session->renderer_controls, i);
-          return TRUE;
-        }
-    }
-
-  return FALSE;
-}
-
-static void
 revoke_sessions_for_sender (MetaCastKmsGrantBroker *broker,
                             const char             *sender)
 {
@@ -325,7 +268,6 @@ meta_cast_kms_display_session_free (MetaCastKmsDisplaySession *session)
   if (session->name_watch_id)
     g_bus_unwatch_name (session->name_watch_id);
 
-  g_clear_pointer (&session->renderer_controls, g_ptr_array_unref);
   g_clear_pointer (&session->monitor_control,
                    meta_kms_monitor_control_free);
   g_clear_object (&session->capture_grant);
@@ -340,7 +282,6 @@ request_session_revoke (MetaCastKmsDisplaySession *session)
 
   session->revoking = TRUE;
   clear_source (&session->capture_control_source);
-  g_clear_pointer (&session->renderer_controls, g_ptr_array_unref);
   g_clear_pointer (&session->monitor_control,
                    meta_kms_monitor_control_free);
 
@@ -371,12 +312,10 @@ meta_cast_kms_display_session_new (MetaCastKmsGrantBroker  *broker,
                                    GDBusConnection         *connection,
                                    const char              *sender,
                                    MetaKmsDevice           *kms_device,
-                                   uint32_t                 crtc_id,
                                    uint32_t                 connector_id,
                                    uint64_t                 session_id,
                                    MetaKmsCaptureGrant     *capture_grant,
-                                   MetaKmsMonitorControl   *monitor_control,
-                                   MetaKmsRendererControl  *renderer_control)
+                                   MetaKmsMonitorControl   *monitor_control)
 {
   MetaCastKmsDisplaySession *session;
   int control_fd;
@@ -385,13 +324,8 @@ meta_cast_kms_display_session_new (MetaCastKmsGrantBroker  *broker,
   session->broker = broker;
   session->capture_grant = g_object_ref (capture_grant);
   session->monitor_control = monitor_control;
-  session->renderer_controls =
-    g_ptr_array_new_with_free_func ((GDestroyNotify)
-                                    meta_cast_kms_renderer_endpoint_free);
-  g_assert (add_renderer_control (session, renderer_control) == 1);
   session->sender = g_strdup (sender);
   session->kms_device = kms_device;
-  session->crtc_id = crtc_id;
   session->connector_id = connector_id;
   session->session_id = session_id;
 
@@ -478,19 +412,13 @@ create_display_session (MetaCastKmsGrantBroker *broker,
     g_dbus_method_invocation_get_connection (invocation);
   g_autoptr (MetaKmsCaptureGrant) capture_grant = NULL;
   g_autoptr (MetaKmsMonitorControl) monitor_control = NULL;
-  g_autoptr (MetaKmsRendererControl) renderer_control = NULL;
   g_autoptr (GUnixFDList) out_fd_list = NULL;
   g_autoptr (GError) error = NULL;
-  g_autofree char *render_node = NULL;
   g_autofd int monitor_fd = -1;
-  g_autofd int renderer_fd = -1;
   g_autofd int capture_fd = -1;
   MetaKmsDevice *kms_device;
-  MetaRenderer *renderer;
-  MetaDeviceFile *render_device_file;
   MetaCastKmsDisplaySession *session;
   int monitor_index;
-  int renderer_index;
   int capture_index;
   uint64_t session_id;
 
@@ -514,21 +442,6 @@ create_display_session (MetaCastKmsGrantBroker *broker,
       return;
     }
 
-  renderer = meta_backend_get_renderer (META_BACKEND (broker->backend_native));
-  render_device_file = meta_renderer_native_get_primary_device_file (
-    META_RENDERER_NATIVE (renderer));
-  render_node = drmGetRenderDeviceNameFromFd (
-    meta_device_file_get_fd (render_device_file));
-  if (!render_node)
-    {
-      g_dbus_method_invocation_return_error_literal (
-        invocation,
-        G_IO_ERROR,
-        G_IO_ERROR_NOT_SUPPORTED,
-        "The compositor GPU has no DRM render node");
-      return;
-    }
-
   if (has_session_for_connector (broker, kms_device, connector_id))
     {
       g_dbus_method_invocation_return_error_literal (
@@ -544,17 +457,6 @@ create_display_session (MetaCastKmsGrantBroker *broker,
       g_dbus_method_invocation_return_error_literal (
         invocation, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
         "Display session identifiers exhausted");
-      return;
-    }
-
-  renderer_control =
-    meta_kms_renderer_control_new (kms_device,
-                                   crtc_id,
-                                   connector_id,
-                                   &error);
-  if (!renderer_control)
-    {
-      g_dbus_method_invocation_return_gerror (invocation, error);
       return;
     }
 
@@ -575,18 +477,11 @@ create_display_session (MetaCastKmsGrantBroker *broker,
     }
 
   monitor_fd = meta_kms_monitor_control_steal_fd (monitor_control);
-  renderer_fd = meta_kms_renderer_control_steal_fd (renderer_control);
   capture_fd = meta_kms_capture_grant_steal_capture_fd (capture_grant);
 
   out_fd_list = g_unix_fd_list_new ();
   monitor_index = g_unix_fd_list_append (out_fd_list, monitor_fd, &error);
   if (monitor_index == -1)
-    {
-      g_dbus_method_invocation_return_gerror (invocation, error);
-      return;
-    }
-  renderer_index = g_unix_fd_list_append (out_fd_list, renderer_fd, &error);
-  if (renderer_index == -1)
     {
       g_dbus_method_invocation_return_gerror (invocation, error);
       return;
@@ -602,14 +497,11 @@ create_display_session (MetaCastKmsGrantBroker *broker,
                                                connection,
                                                sender,
                                                kms_device,
-                                               crtc_id,
                                                connector_id,
                                                session_id,
                                                capture_grant,
                                                g_steal_pointer (
-                                                 &monitor_control),
-                                               g_steal_pointer (
-                                                 &renderer_control));
+                                                 &monitor_control));
   g_hash_table_add (broker->sessions, session);
 
   meta_topic (META_DEBUG_DBUS,
@@ -621,10 +513,7 @@ create_display_session (MetaCastKmsGrantBroker *broker,
     invocation,
     out_fd_list,
     g_variant_new_handle (monitor_index),
-    g_variant_new_handle (renderer_index),
-    session->last_renderer_id,
     g_variant_new_handle (capture_index),
-    render_node,
     session_id);
 }
 
@@ -673,102 +562,6 @@ handle_create_display_session (MetaDBusCastKms       *object,
 }
 
 static gboolean
-handle_acquire_renderer (MetaDBusCastKms       *object,
-                         GDBusMethodInvocation *invocation,
-                         GUnixFDList           *in_fd_list,
-                         uint64_t               session_id)
-{
-  MetaCastKmsGrantBroker *broker = META_CAST_KMS_GRANT_BROKER (object);
-  const char *sender = g_dbus_method_invocation_get_sender (invocation);
-  MetaCastKmsDisplaySession *session;
-  g_autoptr (MetaKmsRendererControl) renderer_control = NULL;
-  g_autoptr (GUnixFDList) out_fd_list = NULL;
-  g_autoptr (GError) error = NULL;
-  g_autofd int renderer_fd = -1;
-  int renderer_index;
-  uint64_t renderer_id;
-
-  session = find_session_for_sender (broker, sender, session_id);
-  if (!session)
-    {
-      g_dbus_method_invocation_return_error_literal (
-        invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
-        "Invalid renderer acquisition request");
-      return G_DBUS_METHOD_INVOCATION_HANDLED;
-    }
-
-  if (session->renderer_controls->len >= MAX_RENDERER_ENDPOINTS)
-    {
-      g_dbus_method_invocation_return_error_literal (
-        invocation, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
-        "Display session renderer endpoint limit reached");
-      return G_DBUS_METHOD_INVOCATION_HANDLED;
-    }
-
-  renderer_control =
-    meta_kms_renderer_control_new (session->kms_device,
-                                   session->crtc_id,
-                                   session->connector_id,
-                                   &error);
-  if (!renderer_control)
-    {
-      g_dbus_method_invocation_return_gerror (invocation, error);
-      return G_DBUS_METHOD_INVOCATION_HANDLED;
-    }
-
-  renderer_fd = meta_kms_renderer_control_steal_fd (renderer_control);
-  out_fd_list = g_unix_fd_list_new ();
-  renderer_index = g_unix_fd_list_append (out_fd_list, renderer_fd, &error);
-  if (renderer_index == -1)
-    {
-      g_dbus_method_invocation_return_gerror (invocation, error);
-      return G_DBUS_METHOD_INVOCATION_HANDLED;
-    }
-
-  if (session->last_renderer_id == G_MAXUINT64)
-    {
-      g_dbus_method_invocation_return_error_literal (
-        invocation, G_IO_ERROR, G_IO_ERROR_NO_SPACE,
-        "Renderer endpoint identifiers exhausted");
-      return G_DBUS_METHOD_INVOCATION_HANDLED;
-    }
-  renderer_id = add_renderer_control (session,
-                                      g_steal_pointer (&renderer_control));
-  meta_dbus_cast_kms_complete_acquire_renderer (
-    object,
-    invocation,
-    out_fd_list,
-    g_variant_new_handle (renderer_index),
-    renderer_id);
-  return G_DBUS_METHOD_INVOCATION_HANDLED;
-}
-
-static gboolean
-handle_release_renderer (MetaDBusCastKms       *object,
-                         GDBusMethodInvocation *invocation,
-                         uint64_t               session_id,
-                         uint64_t               renderer_id)
-{
-  MetaCastKmsGrantBroker *broker = META_CAST_KMS_GRANT_BROKER (object);
-  const char *sender = g_dbus_method_invocation_get_sender (invocation);
-  MetaCastKmsDisplaySession *session;
-
-  session = find_session_for_sender (broker, sender, session_id);
-  if (!session || renderer_id == 0 ||
-      renderer_id > session->last_renderer_id)
-    {
-      g_dbus_method_invocation_return_error_literal (
-        invocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
-        "Invalid renderer release request");
-      return G_DBUS_METHOD_INVOCATION_HANDLED;
-    }
-
-  remove_renderer_control (session, renderer_id);
-  meta_dbus_cast_kms_complete_release_renderer (object, invocation);
-  return G_DBUS_METHOD_INVOCATION_HANDLED;
-}
-
-static gboolean
 handle_release_display_session (MetaDBusCastKms       *object,
                                 GDBusMethodInvocation *invocation,
                                 uint64_t               session_id)
@@ -796,8 +589,6 @@ static void
 meta_cast_kms_grant_broker_init_iface (MetaDBusCastKmsIface *iface)
 {
   iface->handle_create_display_session = handle_create_display_session;
-  iface->handle_acquire_renderer = handle_acquire_renderer;
-  iface->handle_release_renderer = handle_release_renderer;
   iface->handle_release_display_session = handle_release_display_session;
 }
 
