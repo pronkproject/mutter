@@ -700,6 +700,20 @@ test('kms-renderer-control', renderer_control_test,
   suite: ['core', 'mutter/backends/native'],
 )
 
+preparation_test = executable('mutter-kms-preparation',
+  sources: [
+    'kms-preparation-unit-tests.c',
+    '../backends/native/meta-kms-preparation.c',
+  ],
+  include_directories: tests_includes,
+  c_args: tests_c_args,
+  dependencies: [gio_dep, libdrm_dep],
+  link_args: ['-Wl,--wrap=drmIoctl'],
+)
+test('kms-preparation', preparation_test,
+  suite: ['core', 'mutter/backends/native'],
+)
+
 test_cases += [
   {
     'name': 'kms-constraints',

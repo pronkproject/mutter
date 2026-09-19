@@ -335,9 +335,17 @@ power_save_mode_changed (MetaMonitorManager *manager,
       return;
     }
 
+  if (mode == priv->power_save_mode)
+    return;
+
   klass = META_MONITOR_MANAGER_GET_CLASS (manager);
-  if (klass->set_power_save_mode)
-    klass->set_power_save_mode (manager, mode);
+  if (klass->set_power_save_mode &&
+      !klass->set_power_save_mode (manager, mode))
+    {
+      meta_dbus_display_config_set_power_save_mode (manager->display_config,
+                                                    priv->power_save_mode);
+      return;
+    }
 
   reason = META_POWER_SAVE_CHANGE_REASON_MODE_CHANGE;
   meta_monitor_manager_power_save_mode_changed (manager, mode, reason);

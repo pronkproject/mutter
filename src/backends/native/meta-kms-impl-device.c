@@ -2765,7 +2765,7 @@ meta_kms_impl_device_process_update (MetaKmsImplDevice *impl_device,
     }
 }
 
-void
+gboolean
 meta_kms_impl_device_disable (MetaKmsImplDevice *impl_device)
 {
   MetaKmsImplDevicePrivate *priv =
@@ -2774,21 +2774,26 @@ meta_kms_impl_device_disable (MetaKmsImplDevice *impl_device)
   MetaThreadImpl *thread_impl = META_THREAD_IMPL (kms_impl);
   MetaThread *thread = meta_thread_impl_get_thread (thread_impl);
   MetaKmsImplDeviceClass *klass = META_KMS_IMPL_DEVICE_GET_CLASS (impl_device);
+  gboolean disabled;
 
   if (!priv->device_file)
-    return;
+    return TRUE;
 
   disarm_all_frame_sources (impl_device);
 
   meta_kms_impl_device_hold_fd (impl_device);
   meta_thread_inhibit_realtime_in_impl (thread);
-  klass->disable (impl_device);
+  disabled = klass->disable (impl_device);
   meta_thread_uninhibit_realtime_in_impl (thread);
-  g_list_foreach (priv->crtcs,
-                  (GFunc) meta_kms_crtc_disable_in_impl, NULL);
-  g_list_foreach (priv->connectors,
-                  (GFunc) meta_kms_connector_disable_in_impl, NULL);
+  if (disabled)
+    {
+      g_list_foreach (priv->crtcs,
+                      (GFunc) meta_kms_crtc_disable_in_impl, NULL);
+      g_list_foreach (priv->connectors,
+                      (GFunc) meta_kms_connector_disable_in_impl, NULL);
+    }
   meta_kms_impl_device_unhold_fd (impl_device);
+  return disabled;
 }
 
 void

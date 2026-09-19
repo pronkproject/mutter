@@ -38,6 +38,8 @@ typedef gboolean (* MetaKmsAtomicProcessFunc) (MetaKmsImplDevice  *impl_device,
                                                gpointer            user_data,
                                                GError            **error);
 
+#define KMS_PREPARATION_WAIT_TIMEOUT_US (2 * G_USEC_PER_SEC)
+
 struct _MetaKmsImplDeviceAtomic
 {
   MetaKmsImplDevice parent;
@@ -1305,6 +1307,8 @@ meta_kms_impl_device_atomic_process_update (MetaKmsImplDevice *impl_device,
   gboolean retryable = FALSE;
   gboolean constraints_stale = FALSE;
   int64_t preparation_retry_deadline = g_get_monotonic_time () + 100 * 1000;
+  int64_t preparation_wait_deadline =
+    g_get_monotonic_time () + KMS_PREPARATION_WAIT_TIMEOUT_US;
   int ret;
 
   blob_ids = g_array_new (FALSE, TRUE, sizeof (uint32_t));
@@ -1338,7 +1342,9 @@ retry:
                            "Display preparation is pending");
               goto err;
             }
-          if (!meta_kms_preparation_wait (preparation, &error))
+          if (!meta_kms_preparation_wait_until (preparation,
+                                                preparation_wait_deadline,
+                                                &error))
             goto err;
           if (!add_preparation (impl_device, preparation, req, &error))
             goto err;
@@ -1480,13 +1486,15 @@ err:
   }
 }
 
-static void
+static gboolean
 meta_kms_impl_device_atomic_disable (MetaKmsImplDevice *impl_device)
 {
   g_autoptr (GError) error = NULL;
   MetaKmsPreparation *preparation = NULL;
   drmModeAtomicReq *req;
   int64_t preparation_retry_deadline = g_get_monotonic_time () + 100 * 1000;
+  int64_t preparation_wait_deadline =
+    g_get_monotonic_time () + KMS_PREPARATION_WAIT_TIMEOUT_US;
   int fd;
   int ret;
 
@@ -1524,7 +1532,10 @@ retry:
       preparation = meta_kms_preparation_create (meta_kms_impl_device_get_fd (impl_device),
                                                  (uint32_t *) ids->data, ids->len,
                                                  &error);
-      if (!preparation || !meta_kms_preparation_wait (preparation, &error) ||
+      if (!preparation ||
+          !meta_kms_preparation_wait_until (preparation,
+                                            preparation_wait_deadline,
+                                            &error) ||
           !add_preparation (impl_device, preparation, req, &error))
         goto err;
     }
@@ -1546,7 +1557,7 @@ retry:
       goto err;
     }
 
-  return;
+  return TRUE;
 
 err:
   g_clear_pointer (&req, drmModeAtomicFree);
@@ -1554,6 +1565,7 @@ err:
   g_warning ("[atomic] Failed to disable device '%s': %s",
              meta_kms_impl_device_get_path (impl_device),
              error->message);
+  return FALSE;
 }
 
 static void

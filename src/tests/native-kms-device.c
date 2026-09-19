@@ -546,7 +546,7 @@ meta_test_kms_device_power_save (void)
    * Enable power saving mode.
    */
 
-  meta_kms_device_disable (device);
+  g_assert_true (meta_kms_device_disable (device));
 
   g_assert_false (meta_kms_crtc_is_active (crtc));
   crtc_state = meta_kms_crtc_get_current_state (crtc);

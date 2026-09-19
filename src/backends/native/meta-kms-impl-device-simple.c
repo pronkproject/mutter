@@ -1750,7 +1750,7 @@ set_dpms_to_off (MetaKmsImplDevice  *impl_device,
   return TRUE;
 }
 
-static void
+static gboolean
 meta_kms_impl_device_simple_disable (MetaKmsImplDevice *impl_device)
 {
   g_autoptr (GError) error = NULL;
@@ -1763,7 +1763,9 @@ meta_kms_impl_device_simple_disable (MetaKmsImplDevice *impl_device)
       g_warning ("Failed to set DPMS to off on device '%s': %s",
                  meta_kms_impl_device_get_path (impl_device),
                  error->message);
+      return FALSE;
     }
+  return TRUE;
 }
 
 static void

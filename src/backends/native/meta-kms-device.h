@@ -82,7 +82,7 @@ gboolean meta_kms_device_handle_flush (MetaKmsDevice *device,
                                        MetaKmsCrtc   *crtc);
 
 META_EXPORT_TEST
-void meta_kms_device_disable (MetaKmsDevice *device);
+gboolean meta_kms_device_disable (MetaKmsDevice *device);
 
 gboolean meta_kms_device_lease_objects (MetaKmsDevice  *device,
                                         GList          *connectors,

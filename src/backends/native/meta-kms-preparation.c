@@ -82,8 +82,9 @@ meta_kms_preparation_is_pending (MetaKmsPreparation *preparation)
 }
 
 gboolean
-meta_kms_preparation_wait (MetaKmsPreparation  *preparation,
-                           GError             **error)
+meta_kms_preparation_wait_until (MetaKmsPreparation  *preparation,
+                                 int64_t              deadline_us,
+                                 GError             **error)
 {
   struct drm_prepare_query query;
   GPollFD poll_fd = {
@@ -93,6 +94,9 @@ meta_kms_preparation_wait (MetaKmsPreparation  *preparation,
 
   for (;;)
     {
+      int64_t remaining_us;
+      int timeout_ms;
+
       if (drmIoctl (preparation->fd, DRM_IOCTL_PREPARE_QUERY, &query) < 0)
         {
           g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
@@ -107,7 +111,24 @@ meta_kms_preparation_wait (MetaKmsPreparation  *preparation,
                        "Display preparation ended with status %u", query.status);
           return FALSE;
         }
-      if (g_poll (&poll_fd, 1, -1) < 0 && errno != EINTR)
+
+      if (poll_fd.revents & (G_IO_ERR | G_IO_HUP | G_IO_NVAL))
+        {
+          g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                       "Display preparation fd closed while pending");
+          return FALSE;
+        }
+
+      remaining_us = deadline_us - g_get_monotonic_time ();
+      if (remaining_us <= 0)
+        {
+          g_set_error (error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+                       "Waiting for display preparation timed out");
+          return FALSE;
+        }
+      timeout_ms = (int) MIN ((remaining_us + 999) / 1000, G_MAXINT);
+      poll_fd.revents = 0;
+      if (g_poll (&poll_fd, 1, timeout_ms) < 0 && errno != EINTR)
         {
           g_set_error (error, G_IO_ERROR, g_io_error_from_errno (errno),
                        "Waiting for display preparation: %s", g_strerror (errno));

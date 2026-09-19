@@ -235,19 +235,17 @@ disable_device_in_impl (MetaThreadImpl  *thread_impl,
 {
   MetaKmsImplDevice *impl_device = user_data;
 
-  meta_kms_impl_device_disable (impl_device);
-
-  return GINT_TO_POINTER (TRUE);
+  return GINT_TO_POINTER (meta_kms_impl_device_disable (impl_device));
 }
 
-void
+gboolean
 meta_kms_device_disable (MetaKmsDevice *device)
 {
   meta_assert_not_in_kms_impl (device->kms);
 
-  meta_kms_run_impl_task_sync (device->kms, disable_device_in_impl,
-                               device->impl_device,
-                               NULL);
+  return GPOINTER_TO_INT (
+    meta_kms_run_impl_task_sync (device->kms, disable_device_in_impl,
+                                 device->impl_device, NULL));
 }
 
 MetaKmsResourceChanges

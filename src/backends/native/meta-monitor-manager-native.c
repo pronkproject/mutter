@@ -101,12 +101,13 @@ meta_monitor_manager_native_read_edid (MetaMonitorManager *manager,
   return meta_output_native_read_edid (META_OUTPUT_NATIVE (output));
 }
 
-static void
+static gboolean
 meta_monitor_manager_native_set_power_save_mode (MetaMonitorManager *manager,
                                                  MetaPowerSave       mode)
 {
   MetaBackend *backend = meta_monitor_manager_get_backend (manager);
   GList *l;
+  gboolean succeeded = TRUE;
 
   for (l = meta_backend_get_gpus (backend); l; l = l->next)
     {
@@ -121,11 +122,14 @@ meta_monitor_manager_native_set_power_save_mode (MetaMonitorManager *manager,
         case META_POWER_SAVE_SUSPEND:
         case META_POWER_SAVE_OFF:
           {
-            meta_kms_device_disable (meta_gpu_kms_get_kms_device (gpu_kms));
+            if (!meta_kms_device_disable (meta_gpu_kms_get_kms_device (gpu_kms)))
+              succeeded = FALSE;
             break;
           }
         }
     }
+
+  return succeeded;
 }
 
 static void

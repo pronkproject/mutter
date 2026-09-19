@@ -171,7 +171,8 @@ struct _MetaMonitorManager
  * @apply_monitors_config: Tries to apply the given config using the given
  *   method. Throws an error if something went wrong.
  *
- * @set_power_save_mode: Sets the #MetaPowerSave mode (for all displays).
+ * @set_power_save_mode: Sets the #MetaPowerSave mode (for all displays),
+ *   returning whether the requested change succeeded.
  *
  * @tiled_monitor_added: Should be called by a #MetaMonitor when it is created.
  *
@@ -207,8 +208,8 @@ struct _MetaMonitorManagerClass
                                       MetaMonitorsConfigMethod   method,
                                       GError                   **error);
 
-  void (* set_power_save_mode) (MetaMonitorManager *manager,
-                                MetaPowerSave       power_save);
+  gboolean (* set_power_save_mode) (MetaMonitorManager *manager,
+                                    MetaPowerSave       power_save);
 
   void (* tiled_monitor_added) (MetaMonitorManager *manager,
                                 MetaMonitor        *monitor);

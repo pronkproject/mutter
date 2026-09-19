@@ -14,5 +14,6 @@ void meta_kms_preparation_free (MetaKmsPreparation *preparation);
 int meta_kms_preparation_get_fd (MetaKmsPreparation *preparation);
 const GArray * meta_kms_preparation_get_crtc_ids (MetaKmsPreparation *preparation);
 gboolean meta_kms_preparation_is_pending (MetaKmsPreparation *preparation);
-gboolean meta_kms_preparation_wait (MetaKmsPreparation  *preparation,
-                                    GError             **error);
+gboolean meta_kms_preparation_wait_until (MetaKmsPreparation  *preparation,
+                                          int64_t              deadline_us,
+                                          GError             **error);

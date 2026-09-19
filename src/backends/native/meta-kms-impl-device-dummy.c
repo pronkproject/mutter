@@ -43,9 +43,10 @@ meta_kms_impl_device_dummy_discard_pending_page_flips (MetaKmsImplDevice *impl_d
 {
 }
 
-static void
+static gboolean
 meta_kms_impl_device_dummy_disable (MetaKmsImplDevice *impl_device)
 {
+  return TRUE;
 }
 
 static MetaDeviceFile *
