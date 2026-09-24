@@ -83,6 +83,7 @@ typedef struct _MetaMonitorManagerNativePrivate
   gboolean needs_outputs;
 
   guint rebuild_virtual_idle_id;
+  guint rebuild_constraints_idle_id;
 } MetaMonitorManagerNativePrivate;
 
 static void
@@ -382,10 +383,28 @@ handle_hotplug_event (MetaMonitorManager *manager)
 }
 
 static void
+rebuild_constraints_idle_cb (gpointer user_data)
+{
+  MetaMonitorManagerNative *manager_native = user_data;
+  MetaMonitorManagerNativePrivate *priv =
+    meta_monitor_manager_native_get_instance_private (manager_native);
+  MetaMonitorManager *manager = META_MONITOR_MANAGER (manager_native);
+
+  priv->rebuild_constraints_idle_id = 0;
+  meta_monitor_manager_rebuild (
+    manager,
+    meta_monitor_config_manager_get_current (manager->config_manager));
+}
+
+static void
 on_kms_resources_changed (MetaKms                *kms,
                           MetaKmsResourceChanges  changes,
                           MetaMonitorManager     *manager)
 {
+  MetaMonitorManagerNative *manager_native =
+    META_MONITOR_MANAGER_NATIVE (manager);
+  MetaMonitorManagerNativePrivate *priv =
+    meta_monitor_manager_native_get_instance_private (manager_native);
   gboolean needs_emit_privacy_screen_change = FALSE;
 
   g_assert (changes != META_KMS_RESOURCE_CHANGE_NONE);
@@ -393,6 +412,18 @@ on_kms_resources_changed (MetaKms                *kms,
   if (changes == META_KMS_RESOURCE_CHANGE_CRTC_COLOR_PIPELINE)
     {
       meta_dbus_display_config_emit_monitors_changed (manager->display_config);
+      return;
+    }
+
+  if (changes == META_KMS_RESOURCE_CHANGE_CONSTRAINTS)
+    {
+      if (!priv->rebuild_constraints_idle_id)
+        {
+          priv->rebuild_constraints_idle_id =
+            mtk_idle_add_once (rebuild_constraints_idle_cb, manager_native);
+          mtk_source_set_name_by_id (priv->rebuild_constraints_idle_id,
+                                     "[mutter] rebuild_constraints_idle_cb");
+        }
       return;
     }
 
@@ -644,6 +675,7 @@ meta_monitor_manager_native_dispose (GObject *object)
     meta_monitor_manager_native_get_instance_private (manager_native);
 
   g_clear_handle_id (&priv->rebuild_virtual_idle_id, mtk_source_remove);
+  g_clear_handle_id (&priv->rebuild_constraints_idle_id, mtk_source_remove);
   g_clear_pointer (&priv->crtc_gamma_cache, g_hash_table_unref);
   g_clear_pointer (&priv->crtc_ctm_cache, g_hash_table_unref);
 
@@ -657,6 +689,7 @@ on_monitors_changed (MetaMonitorManagerNative *manager_native)
     meta_monitor_manager_native_get_instance_private (manager_native);
 
   g_clear_handle_id (&priv->rebuild_virtual_idle_id, mtk_source_remove);
+  g_clear_handle_id (&priv->rebuild_constraints_idle_id, mtk_source_remove);
 }
 
 static gboolean

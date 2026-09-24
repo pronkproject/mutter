@@ -603,7 +603,7 @@ meta_kms_crtc_reload_constraints_in_impl (MetaKmsCrtc *crtc)
                    meta_kms_constraints_list_unref);
   crtc->constraints_list = g_steal_pointer (&constraints_list);
 
-  return META_KMS_RESOURCE_CHANGE_FULL;
+  return META_KMS_RESOURCE_CHANGE_CONSTRAINTS;
 }
 
 MetaKmsResourceChanges
@@ -624,7 +624,7 @@ meta_kms_crtc_refresh_constraints_in_impl (MetaKmsCrtc *crtc,
     {
       g_clear_pointer (&crtc->constraints_list,
                        meta_kms_constraints_list_unref);
-      return META_KMS_RESOURCE_CHANGE_FULL;
+      return META_KMS_RESOURCE_CHANGE_CONSTRAINTS;
     }
 
   if (generation <= old_generation)
