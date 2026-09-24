@@ -522,7 +522,7 @@ meta_kms_impl_device_list_lessees (MetaKmsImplDevice  *impl_device,
   return TRUE;
 }
 
-#if DRM_EVENT_CONTEXT_VERSION >= 5
+#ifdef DRM_KMS_CONSTRAINTS_LIST_CLOSED
 static void
 handle_constraints_list_changed (int       fd,
                                  uint32_t  crtc_id,
@@ -582,7 +582,7 @@ meta_kms_impl_device_dispatch (MetaKmsImplDevice  *impl_device,
   drm_event_context = (drmEventContext) { 0 };
   klass->setup_drm_event_context (impl_device, &drm_event_context);
 
-#if DRM_EVENT_CONTEXT_VERSION >= 5
+#ifdef DRM_KMS_CONSTRAINTS_LIST_CLOSED
   drm_event_context.version = DRM_EVENT_CONTEXT_VERSION;
   drm_event_context.kms_constraints_list_changed_handler =
     handle_constraints_list_changed;

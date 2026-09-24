@@ -1694,7 +1694,7 @@ meta_kms_impl_device_atomic_open_device_file (MetaKmsImplDevice  *impl_device,
         return NULL;
       }
 
-#if DRM_EVENT_CONTEXT_VERSION >= 5
+#ifdef DRM_KMS_CONSTRAINTS_LIST_CLOSED
     MetaKmsDeviceCaps *caps = meta_kms_impl_device_get_caps (impl_device);
 
     if (drmSetClientCap (fd, DRM_CLIENT_CAP_KMS_CONSTRAINTS, 1) == 0)
