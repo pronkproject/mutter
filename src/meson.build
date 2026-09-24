@@ -713,8 +713,6 @@ mutter_sources += [
   'backends/native/meta-kms-constraints-buffer.h',
   'backends/native/meta-kms-constraints-decoder.c',
   'backends/native/meta-kms-constraints-decoder.h',
-  'backends/native/meta-kms-constraints-event.c',
-  'backends/native/meta-kms-constraints-event.h',
   'backends/native/meta-kms-constraints-ioctl.c',
   'backends/native/meta-kms-constraints-ioctl.h',
   'backends/native/meta-kms-constraints-list.c',
