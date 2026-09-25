@@ -3946,15 +3946,6 @@ should_try_fbos (CoglOnscreen *onscreen)
       return try;
     }
 
-  if (g_strcmp0 (meta_kms_device_get_driver_name (
-                   meta_gpu_kms_get_kms_device (onscreen_native->render_gpu)),
-                 "virtio_gpu") == 0)
-    {
-      meta_topic (META_DEBUG_KMS,
-                  "Using a GBM surface for virtio_gpu output");
-      return FALSE;
-    }
-
   is_nvidia = meta_onscreen_native_is_nvidia (onscreen_native);
 
   /* The Mesa Gallium HUD can only work with a surface */
