@@ -1803,10 +1803,9 @@ update_secondary_gpu_state_pre_swap_buffers (CoglOnscreen    *onscreen,
           break;
         case META_SHARED_FRAMEBUFFER_COPY_MODE_ZERO:
           /* Done after eglSwapBuffers. */
-          if (secondary_gpu_state->import_status ==
-              META_SHARED_FRAMEBUFFER_IMPORT_STATUS_OK)
+          if (secondary_gpu_state->import_status !=
+              META_SHARED_FRAMEBUFFER_IMPORT_STATUS_FAILED)
             break;
-          /* prepare fallback */
           G_GNUC_FALLTHROUGH;
         case META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY:
           if (!renderer_gpu_data->secondary.copy_mode_primary_force_cpu)
@@ -1899,6 +1898,11 @@ acquire_front_buffer (CoglOnscreen     *onscreen,
                                                    primary_gpu_fb);
           if (imported_fb)
             return imported_fb;
+
+          /* Primary copies read the back buffer before eglSwapBuffers. */
+          g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK,
+                               "Primary GPU copy needs a new frame");
+          return NULL;
         }
       G_GNUC_FALLTHROUGH;
     case META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY:
@@ -2370,7 +2374,19 @@ maybe_post_next_frame (CoglOnscreen *onscreen)
                                          &error);
           if (buffer == NULL)
             {
-              g_warning ("Failed to acquire front buffer: %s", error->message);
+              if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_WOULD_BLOCK))
+                {
+                  ClutterStageView *view =
+                    CLUTTER_STAGE_VIEW (onscreen_native->view);
+
+                  clutter_stage_view_add_redraw_clip (view, NULL);
+                  clutter_stage_view_schedule_update_now (view);
+                }
+              else
+                {
+                  g_warning ("Failed to acquire front buffer: %s",
+                             error->message);
+                }
               goto post_failed;
             }
 
@@ -4784,9 +4800,8 @@ init_secondary_gpu_state (MetaRendererNative  *renderer_native,
       G_GNUC_FALLTHROUGH;
     case META_SHARED_FRAMEBUFFER_COPY_MODE_ZERO:
       /*
-       * Initialize also the primary copy mode, so that if zero-copy
-       * path fails, which is quite likely, we can simply continue
-       * with the primary copy path on the very first frame.
+       * The primary copy buffers remain available if importing a frame
+       * fails. Copying starts with a full redraw on the following frame.
        */
       G_GNUC_FALLTHROUGH;
     case META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY:
