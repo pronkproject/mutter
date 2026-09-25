@@ -3635,9 +3635,26 @@ create_bos_gbm (CoglOnscreen  *onscreen,
 
       for (i = 0; i < num_bos; i++)
         {
+          struct gbm_bo *bo = onscreen_native->gbm.bos[i].gbm;
+
+          if (gbm_bo_get_modifier (bo) == DRM_FORMAT_MOD_LINEAR &&
+              format_info->multi_texture_format ==
+                META_MULTI_TEXTURE_FORMAT_SIMPLE &&
+              gbm_bo_get_stride_for_plane (bo, 0) <
+                (uint64_t) width *
+                cogl_pixel_format_get_bytes_per_pixel (format_info->cogl_format,
+                                                       0))
+            {
+              g_set_error_literal (error,
+                                   G_IO_ERROR,
+                                   G_IO_ERROR_NOT_SUPPORTED,
+                                   "Allocated GBM buffer has a short pitch");
+              break;
+            }
+
           if (!allocated_with_modifiers &&
               (allow_implicit_layout ||
-               gbm_bo_get_modifier (onscreen_native->gbm.bos[i].gbm) ==
+               gbm_bo_get_modifier (bo) ==
                  DRM_FORMAT_MOD_INVALID))
             flags = META_DRM_BUFFER_FLAG_DISABLE_MODIFIERS;
           else
@@ -3645,11 +3662,12 @@ create_bos_gbm (CoglOnscreen  *onscreen,
 
           onscreen_native->gbm.bos[i].buffer_gbm =
             meta_drm_buffer_gbm_new_take (device_file,
-                                          onscreen_native->gbm.bos[i].gbm,
+                                          bo,
                                           flags,
                                           error);
           if (!onscreen_native->gbm.bos[i].buffer_gbm)
             break;
+          onscreen_native->gbm.bos[i].gbm = NULL;
 
           if (!constraints_allow_primary_buffer_layout (
                 onscreen_native,
@@ -3674,7 +3692,7 @@ create_bos_gbm (CoglOnscreen  *onscreen,
 
           egl_image =
             meta_egl_ensure_gbm_bo_egl_image (COGL_RENDERER_EGL (cogl_renderer),
-                                              g_steal_pointer (&onscreen_native->gbm.bos[i].gbm),
+                                              bo,
                                               META_EGL_GPU_PRIMARY,
                                               error);
           if (egl_image == EGL_NO_IMAGE_KHR)
@@ -3760,10 +3778,23 @@ create_surfaces_gbm (CoglOnscreen        *onscreen,
 
   should_be_sharable = should_surface_be_sharable (onscreen);
 
-  if (!cogl_renderer_egl_has_feature (cogl_renderer_egl,
-                                      COGL_EGL_WINSYS_FEATURE_NO_CONFIG_CONTEXT) ||
-      !choose_onscreen_egl_config (onscreen, &egl_config, &config_error))
-    egl_config = cogl_display_egl_get_egl_config (cogl_display_egl);
+  if (cogl_renderer_egl_has_feature (cogl_renderer_egl,
+                                     COGL_EGL_WINSYS_FEATURE_NO_CONFIG_CONTEXT))
+    {
+      if (!choose_onscreen_egl_config (onscreen, &egl_config, &config_error))
+        {
+          if (config_error)
+            g_propagate_error (error, g_steal_pointer (&config_error));
+          else
+            g_set_error_literal (error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                                 "No EGL format satisfies the KMS constraints");
+          return FALSE;
+        }
+    }
+  else
+    {
+      egl_config = cogl_display_egl_get_egl_config (cogl_display_egl);
+    }
 
   format = get_gbm_format_from_egl (cogl_renderer_egl,
                                     egl_config);
@@ -3898,6 +3929,15 @@ should_try_fbos (CoglOnscreen *onscreen)
                   try ? "T" : "Not t",
                   use_fbos);
       return try;
+    }
+
+  if (g_strcmp0 (meta_kms_device_get_driver_name (
+                   meta_gpu_kms_get_kms_device (onscreen_native->render_gpu)),
+                 "virtio_gpu") == 0)
+    {
+      meta_topic (META_DEBUG_KMS,
+                  "Using a GBM surface for virtio_gpu output");
+      return FALSE;
     }
 
   is_nvidia = meta_onscreen_native_is_nvidia (onscreen_native);

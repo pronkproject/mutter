@@ -107,7 +107,13 @@ meta_drm_buffer_do_ensure_fb_id (MetaDrmBuffer        *buffer,
           g_set_error (error,
                        G_IO_ERROR,
                        g_io_error_from_errno (errno),
-                       "drmModeAddFB2WithModifiers failed: %s",
+                       "drmModeAddFB2WithModifiers failed for %ux%u %s "
+                       "(pitch %u, modifier 0x%" G_GINT64_MODIFIER "x): %s",
+                       fb_args->width,
+                       fb_args->height,
+                       meta_drm_format_to_string (&tmp, fb_args->format),
+                       fb_args->strides[0],
+                       fb_args->modifiers[0],
                        g_strerror (errno));
           return FALSE;
         }
