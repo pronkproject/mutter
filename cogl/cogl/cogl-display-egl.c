@@ -410,9 +410,16 @@ cogl_display_egl_make_current (CoglDisplayEGL *display_egl,
                         read,
                         context);
 
-  cogl_display_egl_set_current_draw_surface (display_egl, draw);
-  cogl_display_egl_set_current_read_surface (display_egl, read);
-  cogl_display_egl_set_current_context (display_egl, context);
+  if (ret)
+    {
+      cogl_display_egl_set_current_draw_surface (display_egl, draw);
+      cogl_display_egl_set_current_read_surface (display_egl, read);
+      cogl_display_egl_set_current_context (display_egl, context);
+    }
+  else
+    {
+      g_warning ("eglMakeCurrent failed: 0x%x", eglGetError ());
+    }
 
   return ret;
 }
