@@ -142,6 +142,7 @@ struct _MetaOnscreenNative
   struct {
     struct gbm_surface *surface;
     gboolean surface_uses_explicit_modifiers;
+    gboolean surface_uses_reported_modifiers;
 
     struct {
       struct gbm_bo *gbm;
@@ -345,6 +346,86 @@ constraints_allow_primary_implicit_layout (
     return TRUE;
 
   return onscreen_native->constraints_allow_native_storage;
+}
+
+static gboolean
+constraints_allow_reported_gbm_layout (MetaOnscreenNative       *onscreen_native,
+                                       MetaKmsConstraintsTarget *target,
+                                       MetaKmsPlane             *plane,
+                                       uint32_t                  format,
+                                       uint32_t                  width,
+                                       uint32_t                  height)
+{
+  MetaRendererNativeGpuData *renderer_gpu_data;
+  MetaRenderDeviceGbm *render_device_gbm;
+  MetaDeviceFile *device_file;
+  struct gbm_device *gbm_device;
+  struct gbm_bo *bo;
+  g_autoptr (MetaDrmBufferGbm) buffer_gbm = NULL;
+
+  renderer_gpu_data =
+    meta_renderer_native_get_gpu_data (onscreen_native->renderer_native,
+                                       onscreen_native->render_gpu);
+  if (!META_IS_RENDER_DEVICE_GBM (renderer_gpu_data->render_device))
+    return FALSE;
+
+  render_device_gbm =
+    META_RENDER_DEVICE_GBM (renderer_gpu_data->render_device);
+  gbm_device = meta_render_device_gbm_get_gbm_device (render_device_gbm);
+  device_file =
+    meta_render_device_get_device_file (renderer_gpu_data->render_device);
+  bo = gbm_bo_create (gbm_device, width, height, format,
+                      GBM_BO_USE_RENDERING | GBM_BO_USE_LINEAR);
+  if (!bo)
+    return FALSE;
+
+  if (gbm_bo_get_modifier (bo) == DRM_FORMAT_MOD_INVALID)
+    {
+      gbm_bo_destroy (bo);
+      return FALSE;
+    }
+
+  buffer_gbm = meta_drm_buffer_gbm_new_take (device_file,
+                                              bo,
+                                              META_DRM_BUFFER_FLAG_NONE,
+                                              NULL);
+  if (!buffer_gbm)
+    {
+      gbm_bo_destroy (bo);
+      return FALSE;
+    }
+
+  return meta_kms_constraints_target_allows_drm_buffer (
+    target,
+    plane,
+    META_DRM_BUFFER (buffer_gbm),
+    META_KMS_CONSTRAINTS_STORAGE_IMPORTED);
+}
+
+static gboolean
+constraints_allow_primary_gbm_allocation (MetaOnscreenNative *onscreen_native,
+                                          MetaKmsPlane       *plane,
+                                          uint32_t            format,
+                                          uint32_t            width,
+                                          uint32_t            height)
+{
+  if (constraints_allow_primary_implicit_layout (onscreen_native,
+                                                 plane,
+                                                 format,
+                                                 width,
+                                                 height))
+    return TRUE;
+
+  return onscreen_native->constraints_target &&
+         should_surface_be_sharable (COGL_ONSCREEN (onscreen_native)) &&
+         onscreen_native->constraints_allow_imported_storage &&
+         constraints_allow_reported_gbm_layout (
+           onscreen_native,
+           onscreen_native->constraints_target,
+           plane,
+           format,
+           width,
+           height);
 }
 
 static gboolean
@@ -2012,10 +2093,12 @@ lock_front_buffer (MetaOnscreenNative  *onscreen_native,
 
       render_device_file =
         meta_render_device_get_device_file (renderer_gpu_data->render_device);
-      return meta_drm_buffer_gbm_new_lock_front (render_device_file,
-                                                 onscreen_native->gbm.surface,
-                                                 buffer_flags,
-                                                 error);
+      return meta_drm_buffer_gbm_new_lock_front (
+        render_device_file,
+        onscreen_native->gbm.surface,
+        buffer_flags,
+        onscreen_native->gbm.surface_uses_reported_modifiers,
+        error);
     }
   else
     {
@@ -3522,7 +3605,13 @@ create_bos_gbm (CoglOnscreen  *onscreen,
                                                gbm_format,
                                                width,
                                                height);
-  if (!allocated_with_modifiers && allow_implicit_layout)
+  if (!allocated_with_modifiers &&
+      (allow_implicit_layout ||
+       constraints_allow_primary_gbm_allocation (onscreen_native,
+                                                 kms_plane,
+                                                 gbm_format,
+                                                 width,
+                                                 height)))
     {
       if (should_be_sharable)
         gbm_flags |= GBM_BO_USE_LINEAR;
@@ -3544,11 +3633,16 @@ create_bos_gbm (CoglOnscreen  *onscreen,
       MetaDrmBufferFlags flags = META_DRM_BUFFER_FLAG_NONE;
       EGLImageKHR egl_image;
 
-      if (!allocated_with_modifiers)
-        flags = META_DRM_BUFFER_FLAG_DISABLE_MODIFIERS;
-
       for (i = 0; i < num_bos; i++)
         {
+          if (!allocated_with_modifiers &&
+              (allow_implicit_layout ||
+               gbm_bo_get_modifier (onscreen_native->gbm.bos[i].gbm) ==
+                 DRM_FORMAT_MOD_INVALID))
+            flags = META_DRM_BUFFER_FLAG_DISABLE_MODIFIERS;
+          else
+            flags = META_DRM_BUFFER_FLAG_NONE;
+
           onscreen_native->gbm.bos[i].buffer_gbm =
             meta_drm_buffer_gbm_new_take (device_file,
                                           onscreen_native->gbm.bos[i].gbm,
@@ -3655,6 +3749,7 @@ create_surfaces_gbm (CoglOnscreen        *onscreen,
   EGLSurface new_egl_surface;
   EGLConfig egl_config;
   gboolean uses_explicit_modifiers = FALSE;
+  gboolean uses_reported_modifiers = FALSE;
   uint32_t format;
 
   renderer_gpu_data =
@@ -3703,13 +3798,20 @@ create_surfaces_gbm (CoglOnscreen        *onscreen,
     }
 
   if (!new_gbm_surface &&
-      constraints_allow_primary_implicit_layout (onscreen_native,
-                                                 kms_plane,
-                                                 format,
-                                                 width,
-                                                 height))
+      constraints_allow_primary_gbm_allocation (onscreen_native,
+                                                kms_plane,
+                                                format,
+                                                width,
+                                                height))
     {
       uint32_t flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
+
+      uses_reported_modifiers =
+        !constraints_allow_primary_implicit_layout (onscreen_native,
+                                                    kms_plane,
+                                                    format,
+                                                    width,
+                                                    height);
 
       if (should_be_sharable)
         flags |= GBM_BO_USE_LINEAR;
@@ -3745,6 +3847,8 @@ create_surfaces_gbm (CoglOnscreen        *onscreen,
   *egl_surface = new_egl_surface;
   onscreen_native->gbm.surface_uses_explicit_modifiers =
     uses_explicit_modifiers;
+  onscreen_native->gbm.surface_uses_reported_modifiers =
+    uses_reported_modifiers;
 
   return TRUE;
 }
@@ -3887,35 +3991,45 @@ constraints_target_supports_primary_buffers (
                 height))
             return TRUE;
 
-          if (!meta_renderer_native_use_modifiers (renderer_native))
-            continue;
-
-          if (storage == META_KMS_CONSTRAINTS_STORAGE_IMPORTED)
-            modifiers = get_supported_import_modifiers (
-              COGL_ONSCREEN (onscreen_native),
-              crtc_kms,
-              formats[i]);
-          else
+          if (meta_renderer_native_use_modifiers (renderer_native))
             {
-              GArray *plane_modifiers =
-                meta_kms_plane_get_modifiers_for_format (plane, formats[i]);
+              if (storage == META_KMS_CONSTRAINTS_STORAGE_IMPORTED)
+                modifiers = get_supported_import_modifiers (
+                  COGL_ONSCREEN (onscreen_native),
+                  crtc_kms,
+                  formats[i]);
+              else
+                {
+                  GArray *plane_modifiers =
+                    meta_kms_plane_get_modifiers_for_format (plane, formats[i]);
 
-              if (plane_modifiers)
-                modifiers = g_array_copy (plane_modifiers);
+                  if (plane_modifiers)
+                    modifiers = g_array_copy (plane_modifiers);
+                }
+              if (modifiers)
+                {
+                  filtered_modifiers =
+                    meta_kms_constraints_target_filter_explicit_modifiers (
+                      target,
+                      meta_kms_plane_get_id (plane),
+                      formats[i],
+                      storage,
+                      width,
+                      height,
+                      modifiers);
+                  if (filtered_modifiers->len > 0)
+                    return TRUE;
+                }
             }
-          if (!modifiers)
-            continue;
 
-          filtered_modifiers =
-            meta_kms_constraints_target_filter_explicit_modifiers (
-              target,
-              meta_kms_plane_get_id (plane),
-              formats[i],
-              storage,
-              width,
-              height,
-              modifiers);
-          if (filtered_modifiers->len > 0)
+          if (storage == META_KMS_CONSTRAINTS_STORAGE_IMPORTED &&
+              should_surface_be_sharable (COGL_ONSCREEN (onscreen_native)) &&
+              constraints_allow_reported_gbm_layout (onscreen_native,
+                                                     target,
+                                                     plane,
+                                                     formats[i],
+                                                     width,
+                                                     height))
             return TRUE;
         }
     }

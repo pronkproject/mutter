@@ -210,42 +210,34 @@ meta_drm_buffer_gbm_ensure_fb_id (MetaDrmBuffer  *buffer,
   return TRUE;
 }
 
-static gboolean
-lock_front_buffer (MetaDrmBufferGbm  *buffer_gbm,
-                   GError           **error)
-{
-  buffer_gbm->bo = gbm_surface_lock_front_buffer (buffer_gbm->surface);
-  if (!buffer_gbm->bo)
-    {
-      g_set_error (error,
-                   G_IO_ERROR,
-                   G_IO_ERROR_FAILED,
-                   "gbm_surface_lock_front_buffer failed");
-      return FALSE;
-    }
-
-  return TRUE;
-}
-
 MetaDrmBufferGbm *
 meta_drm_buffer_gbm_new_lock_front (MetaDeviceFile      *device_file,
                                     struct gbm_surface  *gbm_surface,
                                     MetaDrmBufferFlags   flags,
+                                    gboolean             use_reported_modifier,
                                     GError             **error)
 {
   MetaDrmBufferGbm *buffer_gbm;
+  struct gbm_bo *bo;
+
+  bo = gbm_surface_lock_front_buffer (gbm_surface);
+  if (!bo)
+    {
+      g_set_error (error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                   "gbm_surface_lock_front_buffer failed");
+      return NULL;
+    }
+
+  if (use_reported_modifier &&
+      gbm_bo_get_modifier (bo) != DRM_FORMAT_MOD_INVALID)
+    flags &= ~META_DRM_BUFFER_FLAG_DISABLE_MODIFIERS;
 
   buffer_gbm = g_object_new (META_TYPE_DRM_BUFFER_GBM,
                              "device-file", device_file,
                              "flags", flags,
                              NULL);
   buffer_gbm->surface = gbm_surface;
-
-  if (!lock_front_buffer (buffer_gbm, error))
-    {
-      g_object_unref (buffer_gbm);
-      return NULL;
-    }
+  buffer_gbm->bo = bo;
 
   return buffer_gbm;
 }

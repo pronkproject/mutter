@@ -33,6 +33,7 @@ G_DECLARE_FINAL_TYPE (MetaDrmBufferGbm,
 MetaDrmBufferGbm * meta_drm_buffer_gbm_new_lock_front (MetaDeviceFile      *device_file,
                                                        struct gbm_surface  *gbm_surface,
                                                        MetaDrmBufferFlags   flags,
+                                                       gboolean             use_reported_modifier,
                                                        GError             **error);
 
 
