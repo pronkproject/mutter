@@ -1891,16 +1891,15 @@ acquire_front_buffer (CoglOnscreen     *onscreen,
   switch (secondary_gpu_state->renderer_gpu_data->secondary.copy_mode)
     {
     case META_SHARED_FRAMEBUFFER_COPY_MODE_ZERO:
-      imported_fb = import_shared_framebuffer (onscreen,
-                                               secondary_gpu_state,
-                                               primary_gpu_fb);
-      if (imported_fb)
-        return imported_fb;
-      /* The fallback was prepared in pre_swap_buffers and is currently
-       * in secondary_gpu_fb.
-       */
-      renderer_gpu_data->secondary.copy_mode =
-        META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY;
+      if (secondary_gpu_state->import_status !=
+          META_SHARED_FRAMEBUFFER_IMPORT_STATUS_FAILED)
+        {
+          imported_fb = import_shared_framebuffer (onscreen,
+                                                   secondary_gpu_state,
+                                                   primary_gpu_fb);
+          if (imported_fb)
+            return imported_fb;
+        }
       G_GNUC_FALLTHROUGH;
     case META_SHARED_FRAMEBUFFER_COPY_MODE_PRIMARY:
       if (secondary_gpu_fb == NULL)
